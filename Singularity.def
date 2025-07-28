@@ -1,0 +1,19 @@
+%arguments
+    VERSION=25.06
+    PYTHON=py3
+
+Bootstrap: docker
+From: nvcr.io/nvidia/pytorch:{{ VERSION }}-{{ PYTHON }}
+
+%files
+    setup_env.sh /setup_env.sh
+
+%post
+    chmod +x /setup_env.sh
+    /setup_env.sh
+
+%environment
+    export PYTHONPATH=$PYTHON_PATH:./megatron
+
+%runscript
+    exec /usr/bin/python3 "$@"
