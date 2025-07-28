@@ -1,0 +1,62 @@
+name: Build and Release Singularity Container
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Singularity
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y singularity-container
+
+      - name: Create Singularity definition
+        run: |
+          cat << 'EOF' > Singularity.def
+          Bootstrap: docker
+          From: nvcr.io/nvidia/pytorch:25.06-py3
+
+          %files
+              setup_env.sh /setup_env.sh
+
+          %post
+              chmod +x /setup_env.sh
+              /setup_env.sh
+
+          %runscript
+              exec /usr/bin/python3 "$@"
+          EOF
+
+      - name: Build Singularity image
+        run: |
+          singularity build pytorch_25.06_py3.sif Singularity.def
+
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          make_latest: true
+          files: |
+            pytorch_25.06_py3.sif
