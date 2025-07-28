@@ -63,10 +63,14 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compress Singularity image
+        run: |
+          zip -s 1900m -r -0 pytorch_${{ matrix.version }}_${{ matrix.python }}.zip pytorch_${{ matrix.version }}_${{ matrix.python }}.sif
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag_version.outputs.new_tag }}
           make_latest: true
           files: |
-            pytorch_${{ matrix.version }}_${{ matrix.python }}.sif
+            pytorch_${{ matrix.version }}_${{ matrix.python }}.z*
