@@ -35,7 +35,7 @@ jobs:
 
       - name: Build Singularity image
         run: |
-          singularity build \
+          sudo singularity build \
             --build-arg PYTHON=${{ matrix.python }} \
             --build-arg VERSION=${{ matrix.version }} \
             pytorch_${{ matrix.version }}_${{ matrix.python }}.sif Singularity.def
