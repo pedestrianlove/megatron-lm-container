@@ -1,76 +1,97 @@
-name: Build and Release Singularity Container
+name: Build and Push Singularity Container
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows:
+      - Build and Push Docker Image
+    types:
+      - completed
   workflow_dispatch:
+    inputs:
+      docker_tag:
+        description: "Docker image tag in GHCR to convert (for example: sha-<commit> or latest)"
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+  packages: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build_and_release:
+  build_and_push:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        version: [
-          '25.06', '25.05', '25.04', '25.03', '25.02', '25.01',
-          '24.12', '24.11', '24.10', '24.09', '24.08', '24.07', '24.06', '24.05', '24.04', '24.03', '24.02', '24.01',
-        ]
-        python: ['py3']
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          # this might remove tools that are actually needed,
-          # if set to "true" but frees about 6 GB
-          tool-cache: true
-          
-          # all of these default to true, but feel free to set to
-          # "false" if necessary for your workflow
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Singularity
+      - name: Install Apptainer
         run: |
+          sudo add-apt-repository -y ppa:apptainer/ppa
           sudo apt-get update
-          sudo apt-get install -y singularity-container
+          sudo apt-get install -y apptainer
 
-      - name: Build Singularity image
-        run: |
-          sudo singularity build \
-            --build-arg PYTHON=${{ matrix.python }} \
-            --build-arg VERSION=${{ matrix.version }} \
-            pytorch_${{ matrix.version }}_${{ matrix.python }}.sif Singularity.def
-
-      - name: Bump version and push tag
-        id: tag_version
-        uses: mathieudutour/github-tag-action@v6.2
+      - name: Resolve image references
+        id: refs
+        uses: actions/github-script@v7
+        env:
+          DOCKER_TAG_INPUT: ${{ github.event.inputs.docker_tag }}
+          REF_NAME: ${{ github.ref_name }}
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const crypto = require('crypto');
+            const workflowInputTag = (process.env.DOCKER_TAG_INPUT ?? '').trim();
+            const defaultBranch = context.payload.repository.default_branch;
+            const owner = context.repo.owner.toLowerCase();
+            const repo = context.repo.repo.toLowerCase();
+            const sourceBranch = context.eventName === 'workflow_run'
+              ? context.payload.workflow_run.head_branch
+              : process.env.REF_NAME;
+            const imageTag = context.eventName === 'workflow_run'
+              ? `sha-${context.payload.workflow_run.head_sha}`
+              : workflowInputTag;
 
-      - name: Compress Singularity image
+            if (!imageTag) {
+              const observedValue = workflowInputTag || context.payload.workflow_run?.head_sha || 'none';
+              core.setFailed(`Unable to determine Docker image tag from ${context.eventName} event. Received: ${observedValue}`);
+              return;
+            }
+
+            const tagDigest = crypto.createHash('sha256').update(imageTag).digest('hex').slice(0, 12);
+            const sifFile = `${repo}-${tagDigest}.sif`;
+
+            core.setOutput('docker_image', `ghcr.io/${owner}/${repo}:${imageTag}`);
+            core.setOutput('singularity_image_repo', `ghcr.io/${owner}/${repo}-singularity`);
+            core.setOutput('singularity_sha_tag', imageTag);
+            core.setOutput('push_latest', sourceBranch === defaultBranch ? 'true' : 'false');
+            core.setOutput('sif_file', sifFile);
+
+      - name: Pull Docker image from GHCR and convert to SIF
         run: |
-          zip -s 1900m -r -0 pytorch_${{ matrix.version }}_${{ matrix.python }}.zip pytorch_${{ matrix.version }}_${{ matrix.python }}.sif
+          apptainer pull "${{ steps.refs.outputs.sif_file }}" "docker://${{ steps.refs.outputs.docker_image }}"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag_version.outputs.new_tag }}
-          make_latest: true
-          files: |
-            pytorch_${{ matrix.version }}_${{ matrix.python }}.z*
+      - name: Push Singularity image artifact to GHCR
+        run: |
+          set -euo pipefail
+
+          apptainer push \
+            "${{ steps.refs.outputs.sif_file }}" \
+            "oras://${{ steps.refs.outputs.singularity_image_repo }}:${{ steps.refs.outputs.singularity_sha_tag }}"
+
+          if [[ "${{ steps.refs.outputs.push_latest }}" == "true" ]]; then
+            apptainer push \
+              "${{ steps.refs.outputs.sif_file }}" \
+              "oras://${{ steps.refs.outputs.singularity_image_repo }}:latest"
+          fi
