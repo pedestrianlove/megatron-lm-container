@@ -30,8 +30,6 @@ jobs:
             sm_tag: sm89
           - cuda_arch: "9.0"
             sm_tag: sm90
-          - cuda_arch: "10.0"
-            sm_tag: sm100
 
     steps:
       - name: Checkout repository
