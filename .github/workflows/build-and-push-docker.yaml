@@ -13,6 +13,25 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix:
+        compute:
+          - cuda_arch: "7.0"
+            sm_tag: sm70
+          - cuda_arch: "7.5"
+            sm_tag: sm75
+          - cuda_arch: "8.0"
+            sm_tag: sm80
+          - cuda_arch: "8.6"
+            sm_tag: sm86
+          - cuda_arch: "8.9"
+            sm_tag: sm89
+          - cuda_arch: "9.0"
+            sm_tag: sm90
+          - cuda_arch: "10.0"
+            sm_tag: sm100
 
     steps:
       - name: Checkout repository
@@ -45,8 +64,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-
+            type=raw,value=${{ matrix.compute.sm_tag }},enable={{is_default_branch}}
+            type=raw,value=latest-${{ matrix.compute.sm_tag }},enable={{is_default_branch}}
+            type=sha,prefix=sha-,suffix=-${{ matrix.compute.sm_tag }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -54,5 +74,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: |
+            TORCH_CUDA_ARCH_LIST=${{ matrix.compute.cuda_arch }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

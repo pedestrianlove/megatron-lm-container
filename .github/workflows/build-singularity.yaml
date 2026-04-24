@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       docker_tag:
-        description: "Docker image tag in GHCR to convert (for example: sha-<commit> or latest)"
+        description: "Base Docker image tag in GHCR to convert (for example: sha-<commit> or latest); workflow appends compute suffixes"
         required: true
         type: string
 
@@ -25,6 +25,25 @@ jobs:
   build_and_push:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix:
+        compute:
+          - cuda_arch: "7.0"
+            sm_tag: sm70
+          - cuda_arch: "7.5"
+            sm_tag: sm75
+          - cuda_arch: "8.0"
+            sm_tag: sm80
+          - cuda_arch: "8.6"
+            sm_tag: sm86
+          - cuda_arch: "8.9"
+            sm_tag: sm89
+          - cuda_arch: "9.0"
+            sm_tag: sm90
+          - cuda_arch: "10.0"
+            sm_tag: sm100
 
     steps:
       - name: Checkout repository
@@ -49,22 +68,25 @@ jobs:
         env:
           DOCKER_TAG_INPUT: ${{ github.event.inputs.docker_tag }}
           REF_NAME: ${{ github.ref_name }}
+          MATRIX_SM_TAG: ${{ matrix.compute.sm_tag }}
         with:
           script: |
             const crypto = require('crypto');
             const workflowInputTag = (process.env.DOCKER_TAG_INPUT ?? '').trim();
+            const matrixSmTag = (process.env.MATRIX_SM_TAG ?? '').trim();
             const defaultBranch = context.payload.repository.default_branch;
             const owner = context.repo.owner.toLowerCase();
             const repo = context.repo.repo.toLowerCase();
             const sourceBranch = context.eventName === 'workflow_run'
               ? context.payload.workflow_run.head_branch
               : process.env.REF_NAME;
-            const imageTag = context.eventName === 'workflow_run'
+            const baseImageTag = context.eventName === 'workflow_run'
               ? `sha-${context.payload.workflow_run.head_sha}`
               : workflowInputTag;
+            const imageTag = `${baseImageTag}-${matrixSmTag}`;
 
-            if (!imageTag) {
-              const observedValue = workflowInputTag || context.payload.workflow_run?.head_sha || 'none';
+            if (!baseImageTag || !matrixSmTag) {
+              const observedValue = workflowInputTag || context.payload.workflow_run?.head_sha || matrixSmTag || 'none';
               core.setFailed(`Unable to determine Docker image tag from ${context.eventName} event. Received: ${observedValue}`);
               return;
             }
@@ -75,6 +97,8 @@ jobs:
             core.setOutput('docker_image', `ghcr.io/${owner}/${repo}:${imageTag}`);
             core.setOutput('singularity_image_repo', `ghcr.io/${owner}/${repo}-singularity`);
             core.setOutput('singularity_sha_tag', imageTag);
+            core.setOutput('singularity_sm_tag', matrixSmTag);
+            core.setOutput('singularity_latest_sm_tag', `latest-${matrixSmTag}`);
             core.setOutput('push_latest', sourceBranch === defaultBranch ? 'true' : 'false');
             core.setOutput('sif_file', sifFile);
 
@@ -93,5 +117,9 @@ jobs:
           if [[ "${{ steps.refs.outputs.push_latest }}" == "true" ]]; then
             apptainer push \
               "${{ steps.refs.outputs.sif_file }}" \
-              "oras://${{ steps.refs.outputs.singularity_image_repo }}:latest"
+              "oras://${{ steps.refs.outputs.singularity_image_repo }}:${{ steps.refs.outputs.singularity_sm_tag }}"
+
+            apptainer push \
+              "${{ steps.refs.outputs.sif_file }}" \
+              "oras://${{ steps.refs.outputs.singularity_image_repo }}:${{ steps.refs.outputs.singularity_latest_sm_tag }}"
           fi
