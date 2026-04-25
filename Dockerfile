@@ -17,6 +17,7 @@ ARG EMERGING_REF=8d12ddf22e5a7092ae2c21ea5eceaf70eb7f79b3
 ARG GALORE_REF=2cc66f88cce189e505affbb91042a8e77f5bf4e9
 ARG Q_GALORE_REF=5bd2f1c5a1aded31223d7f15c4604c4d56cfe1e6
 ARG APOLLO_PKG_REF=830f7646472497c742ffd5863e18e5156a46a5cc
+ARG S5CMD_VERSION=2.3.0
 ARG MEGATRON_REPO=https://github.com/pedestrianlove/Megatron-LM.git
 ARG MEGATRON_BRANCH=nonuniform-tp
 ARG MEGATRON_REF=01e3ac2b6a68f504aa1f8e8b3ccbd404d387476b
@@ -176,6 +177,17 @@ RUN pip install \
     git+https://github.com/pedestrianlove/Q-GaLore.git@${Q_GALORE_REF} \
     git+https://github.com/pedestrianlove/APOLLO.git@${APOLLO_PKG_REF}
 
+RUN pip install \
+    tensorboard \
+    datasets \
+    nltk \
+    matplotlib
+
+RUN curl -fsSL -o /tmp/s5cmd.tar.gz "https://github.com/peak/s5cmd/releases/download/v${S5CMD_VERSION}/s5cmd_${S5CMD_VERSION}_Linux-64bit.tar.gz" && \
+    tar -xzf /tmp/s5cmd.tar.gz -C /usr/local/bin s5cmd && \
+    chmod +x /usr/local/bin/s5cmd && \
+    rm /tmp/s5cmd.tar.gz
+
 RUN cat <<'EOF' >/usr/local/bin/stack-smoke-test
 #!/usr/bin/env bash
 set -euo pipefail
@@ -231,6 +243,11 @@ pip show nvidia-nvcomp-cu12
 pip show galore-torch
 pip show q-galore-torch
 pip show apollo-torch
+pip show tensorboard
+pip show datasets
+pip show nltk
+pip show matplotlib
+s5cmd version
 EOF
 
 RUN chmod +x /usr/local/bin/stack-smoke-test
@@ -273,6 +290,7 @@ RUN apt-get update && \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/src/Megatron-LM /opt/src/Megatron-LM
+COPY --from=builder /usr/local/bin/s5cmd /usr/local/bin/s5cmd
 COPY --from=builder /usr/local/bin/stack-smoke-test /usr/local/bin/stack-smoke-test
 
 RUN rm -rf /opt/src/Megatron-LM/.git && \
