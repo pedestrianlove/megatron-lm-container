@@ -35,6 +35,10 @@ ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
+    XDG_CACHE_HOME=/tmp/.cache \
+    TORCH_HOME=/tmp/.cache/torch \
+    HF_HOME=/tmp/.cache/huggingface \
+    MPLCONFIGDIR=/tmp/.cache/matplotlib \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:${PATH} \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:/opt/src/pytorch/build/nccl/lib:/opt/venv/lib/python3.12/site-packages/torch/lib
@@ -43,6 +47,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        gh \
         git \
         build-essential \
         pkg-config \
@@ -67,7 +72,10 @@ RUN python${PYTHON_VERSION} -m venv /opt/venv && \
     ln -sf /opt/venv/bin/python /usr/local/bin/python && \
     ln -sf /opt/venv/bin/python /usr/local/bin/python3 && \
     ln -sf /opt/venv/bin/pip /usr/local/bin/pip && \
-    ln -sf /opt/venv/bin/pip /usr/local/bin/pip3
+    ln -sf /opt/venv/bin/pip /usr/local/bin/pip3 && \
+    ln -sf "$(command -v python${PYTHON_VERSION}-config)" /usr/local/bin/python3-config && \
+    ln -sf "$(command -v python${PYTHON_VERSION}-config)" "/usr/local/bin/python${PYTHON_VERSION}-config" && \
+    mkdir -p /tmp/.cache/torch /tmp/.cache/huggingface /tmp/.cache/matplotlib
 
 RUN python --version && \
     pip --version
@@ -248,6 +256,7 @@ pip show datasets
 pip show nltk
 pip show matplotlib
 s5cmd version
+gh --version
 EOF
 
 RUN chmod +x /usr/local/bin/stack-smoke-test
@@ -276,6 +285,10 @@ ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
+    XDG_CACHE_HOME=/tmp/.cache \
+    TORCH_HOME=/tmp/.cache/torch \
+    HF_HOME=/tmp/.cache/huggingface \
+    MPLCONFIGDIR=/tmp/.cache/matplotlib \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:${PATH} \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:/opt/venv/lib/python3.12/site-packages/torch/lib
@@ -283,6 +296,7 @@ ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
+        gh \
         libgomp1 \
         python${PYTHON_VERSION} \
         python${PYTHON_VERSION}-dev && \
@@ -298,6 +312,9 @@ RUN rm -rf /opt/src/Megatron-LM/.git && \
     ln -sf /opt/venv/bin/python /usr/local/bin/python3 && \
     ln -sf /opt/venv/bin/pip /usr/local/bin/pip && \
     ln -sf /opt/venv/bin/pip /usr/local/bin/pip3 && \
+    ln -sf "$(command -v python${PYTHON_VERSION}-config)" /usr/local/bin/python3-config && \
+    ln -sf "$(command -v python${PYTHON_VERSION}-config)" "/usr/local/bin/python${PYTHON_VERSION}-config" && \
+    mkdir -p /tmp/.cache/torch /tmp/.cache/huggingface /tmp/.cache/matplotlib && \
     chmod +x /usr/local/bin/stack-smoke-test
 
 WORKDIR /workspace
